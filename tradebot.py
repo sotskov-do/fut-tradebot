@@ -13,10 +13,13 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
-from selenium.common.exceptions import ElementClickInterceptedException, StaleElementReferenceException, WebDriverException
+from selenium.webdriver.remote.webdriver import WebDriver
+from selenium.common.exceptions import StaleElementReferenceException, WebDriverException
 
-from config import PLAYERS_TO_LIST_XPATH
+from navigation import *
 from user_agents import ua
+from xpaths import PLAYERS_TO_LIST_XPATH
+
 
 class SeleniumDriver():
     def __init__(self):
@@ -34,37 +37,7 @@ class SeleniumDriver():
         self.driver = webdriver.Firefox(service=self.service, options=self.opts)
         return self.driver
 
-
-def click_button(driver, xpath):
-    # TODO: update for created buttons
-    while True:
-        try:
-            btn = WebDriverWait(driver, timeout=30).until(EC.element_to_be_clickable((By.XPATH, xpath)))
-            btn.click()
-            break
-        except ElementClickInterceptedException:
-            continue
-        except StaleElementReferenceException:
-            continue
-
-
-def go_back_main(driver):
-    click_button(driver, '//button[@class="ut-navigation-button-control"]')
-
-
-def go_back_last(driver):
-    click_button(driver, '(//button[@class="ut-navigation-button-control"])[last()]')
-
-
-def go_next_page(driver):
-    click_button(driver, '//button[contains(@class, "next")]')
-
-
-def go_main_page(driver):
-    click_button(driver, '//button[contains(@class, "icon-home")]')
-
-
-def determine_min_buyout_price(driver, section=None, pages_to_scan=10): #, player_name=None):
+def determine_min_buyout_price(driver: WebDriver, section=None, pages_to_scan=10) -> None: #, player_name=None):
     # if player_name is None:
     #     compare_player_price(driver)
     # else:
@@ -74,9 +47,7 @@ def determine_min_buyout_price(driver, section=None, pages_to_scan=10): #, playe
     # while True:
     for _ in range(pages_to_scan):
         time.sleep(0.75)
-        # FIXME: sometimes break at start
-        if driver.find_element(By.XPATH, '//button[contains(@class, "next")]').get_attribute("style") == "display: none;":
-            break
+
         while True:
             try:
                 if section is None:
@@ -87,18 +58,23 @@ def determine_min_buyout_price(driver, section=None, pages_to_scan=10): #, playe
                 break
             except StaleElementReferenceException:
                 continue
+
         buyout_price_list_total.extend(buyout_price_list)
-        go_next_page(driver)
+        if driver.find_element(By.XPATH, '//button[contains(@class, "next")]').get_attribute("style") == "display: none;":
+            break
+        else:
+            go_next_page(driver)
     # TODO: choose correct price
+    # TODO: price to calculate depends from amount of founded players
     # print("dict -", Counter(buyout_price_list_total))
     # print("median -", median(buyout_price_list_total))
     # print("mode -", mode(buyout_price_list_total))
     # go_main_page(driver)
-    return mean(sorted(buyout_price_list_total)[:5])
+    return mean(sorted(buyout_price_list_total)[:5]) * 0.95
     # return median(buyout_price_list_total) * 0.925
 
 
-def list_on_transfer_market(driver, price):
+def list_on_transfer_market(driver: WebDriver, price: int) -> None:
     click_button(driver, '//div[@class="ut-quick-list-panel-view"]')
     bid = driver.find_element(By.XPATH, '(//input[contains(@class, "ut-number-input-control")])[1]')
     bid.click()
@@ -109,35 +85,40 @@ def list_on_transfer_market(driver, price):
     click_button(driver, '(//button[contains(@class, "call-to-action")])[last()]')
 
 
-def locate_player_in_transfer_pile(driver):
+def locate_player_in_transfer_pile(driver: WebDriver) -> None:
     pass
 
 
-def relist(driver):
+def relist(driver: WebDriver) -> None:
     click_button(driver, '//button[text()="Re-list All" and not(@style="display: none;")]')
-    # TODO: click "yes"
+    time.sleep(1)
+    click_button(driver, '//section[contains(@class, "ea-dialog-view-type--message")]//button[.//text()="Yes"]')
 
+def remove_all_sold(driver: WebDriver) -> None:
+    #TODO
+    pass
 
-def clear_sold(driver):
+def clear_sold(driver: WebDriver) -> None:
     click_button(driver, '//button[text()="Clear Sold" and not(@style="display: none;")]')
 
 
-def list_players_in_transfer_pile(driver):
+def list_players_in_transfer_pile(driver: WebDriver) -> None:
+    scanned_players = dict()
+
     enter_transfer_list(driver)
     time.sleep(2.5)
-    # TODO: dict with players price to avoid scanning duplicates
-    scanned_players = dict()
+    
     # TODO: remove all sold
     if len(driver.find_elements(By.XPATH, '//li[contains(@class, "won")]//div[@class="name"]')) > 1:
-        relist(driver)
-    # TODO: relist
+        remove_all_sold(driver)
+
     if len(driver.find_elements(By.XPATH, '//li[contains(@class, "expired")]//div[@class="name"]')) > 1:
         relist(driver)
     
     players_to_sell = driver.find_elements(By.XPATH, PLAYERS_TO_LIST_XPATH)
     players_names = [player_name.text for player_name in players_to_sell]
     # for player in players_to_sell:
-    # FIXME: error if one player will be sold during listing
+    # FIXME: error if no other player on market
     print(len(players_to_sell))
     for idx in range(len(players_to_sell)):
         current_player_name = players_names[idx]
@@ -147,6 +128,8 @@ def list_players_in_transfer_pile(driver):
             time.sleep(1.5)
             list_on_transfer_market(driver, current_player_price)
         else:
+            # FIXME: sometimes click wrong player, maybe need delay
+            time.sleep(1.5)
             click_button(driver, PLAYERS_TO_LIST_XPATH)
 
             action = webdriver.ActionChains(driver)
@@ -156,10 +139,9 @@ def list_players_in_transfer_pile(driver):
             #     action.move_by_offset(0, i)
             action.move_by_offset(0, 175)
             action.perform()
-            click_button(driver, '//span[@class="btn-text" and text()="Compare Price"]/parent::button[@class]') # FIXME: can't locate correctly without hover it manually 
+            click_button(driver, '//span[@class="btn-text" and text()="Compare Price"]/parent::button[@class]')
 
-            # TODO: too many pages to analyze
-            current_player_price = determine_min_buyout_price(driver, section='//section[contains(@class, "ui-layout-right")]')
+            current_player_price = determine_min_buyout_price(driver, section='//section[contains(@class, "ui-layout-right")]', pages_to_scan=15)
             print(current_player_price)
             click_button(driver, PLAYERS_TO_LIST_XPATH)
             # enter_transfer_list(driver)
@@ -168,7 +150,7 @@ def list_players_in_transfer_pile(driver):
             list_on_transfer_market(driver, current_player_price)
 
 
-def create_driver(): 
+def create_driver() -> WebDriver:
     url = "https://www.ea.com/en-en/fifa/ultimate-team/web-app/"
     driver = SeleniumDriver().get_driver()
     
@@ -186,7 +168,7 @@ def create_driver():
     return driver
 
 
-def login(driver):
+def login(driver: WebDriver) -> None:
     driver.find_element(By.XPATH, '//input[@id="email"]').send_keys(os.environ.get("EMAIL"))
     driver.find_element(By.XPATH, '//input[@id="password"]').send_keys(os.environ.get("PSWD"))
     login_btn = WebDriverWait(driver, timeout=30).until(EC.element_to_be_clickable((By.XPATH, '//a[@id="logInBtn"]')))
@@ -197,17 +179,17 @@ def login(driver):
     # TODO: enter code by input
 
 
-def enter_transfer_market(driver):
+def enter_transfer_market(driver: WebDriver) -> None:
     click_button(driver, '//button[contains(@class, "icon-transfer")]')
     click_button(driver, '//div[contains(@class, "ut-tile-transfer-market")]')
 
 
-def enter_transfer_list(driver):
+def enter_transfer_list(driver: WebDriver) -> None:
     click_button(driver, '//button[contains(@class, "icon-transfer")]')
     click_button(driver, '//div[contains(@class, "ut-tile-transfer-list")]')
 
 
-def search_player(driver, player_name):
+def search_player(driver: WebDriver, player_name: str) -> None:
     enter_transfer_market(driver)
     driver.find_element(By.XPATH, '//input[@class="ut-text-input-control"]').send_keys(player_name)
     click_button(driver, '//ul[contains(@class, "playerResultsList")]/button')
@@ -219,6 +201,7 @@ if __name__ == "__main__":
     driver = create_driver()
     login(driver)
     WebDriverWait(driver, timeout=180).until(EC.presence_of_element_located((By.XPATH, '//button[contains(@class, "icon-transfer")]')))
+    #TODO cli menu
     list_players_in_transfer_pile(driver)
     # enter_transfer_market(driver)
     # search_player(driver)
