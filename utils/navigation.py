@@ -31,3 +31,13 @@ def go_next_page(driver: WebDriver):
 
 def go_main_page(driver: WebDriver):
     click_button(driver, '//button[contains(@class, "icon-home")]')
+
+
+def enter_transfer_market(driver: WebDriver) -> None:
+    click_button(driver, '//button[contains(@class, "icon-transfer")]')
+    click_button(driver, '//div[contains(@class, "ut-tile-transfer-market")]')
+
+
+def enter_transfer_list(driver: WebDriver) -> None:
+    click_button(driver, '//button[contains(@class, "icon-transfer")]')
+    click_button(driver, '//div[contains(@class, "ut-tile-transfer-list")]')
